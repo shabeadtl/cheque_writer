@@ -1,0 +1,27 @@
+appId: com.nbo.checkwriter
+productName: NBO Check Writer
+directories:
+  output: release/${version}
+  buildResources: resources
+
+files:
+  - dist
+  - dist-electron
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: NBO Check Writer
+
+# As requested, do not introduce unnecessary dependencies or signing for now
+# Code signing should be configured here for production release
