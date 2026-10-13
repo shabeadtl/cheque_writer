@@ -55,7 +55,7 @@ export function ChequePreview({ data, settings, onCalibrate }: ChequePreviewProp
           role="img"
           aria-label={`Preview of cheque, ${chequeWidth} by ${chequeHeight} millimeters`}
         >
-          {/* NBO header (decorative only) */}
+          {/* Bank header (decorative only) */}
           <div
             style={{
               position: 'absolute',
@@ -69,7 +69,7 @@ export function ChequePreview({ data, settings, onCalibrate }: ChequePreviewProp
             }}
             aria-hidden="true"
           >
-            NATIONAL BANK OF OMAN
+            BANK CHEQUE
           </div>
 
           {/* MICR line placeholder (decorative only) */}
@@ -154,7 +154,7 @@ export function ChequePreview({ data, settings, onCalibrate }: ChequePreviewProp
               <span>
                 <strong>Layout Not Calibrated.</strong>{' '}
                 <span className="text-amber-700">
-                  Physical alignment must be verified against a genuine NBO cheque before printing.
+                  Physical alignment must be verified against genuine cheque stock before printing.
                 </span>
               </span>
             </p>

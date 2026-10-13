@@ -66,7 +66,7 @@ export function CalibrationPage({ settings, onSettingsChange: _onSettingsChange 
     ${gridLines}
     ${corners}
     <text x="${chequeWidth / 2}mm" y="${chequeHeight / 2}mm" font-size="8pt" fill="#999" text-anchor="middle" dominant-baseline="middle">
-      NBO Check Writer — Calibration Grid — ${chequeWidth}mm × ${chequeHeight}mm
+      Check Writer — Calibration Grid — ${chequeWidth}mm × ${chequeHeight}mm
     </text>
   </svg>
 </body>
@@ -172,7 +172,7 @@ export function CalibrationPage({ settings, onSettingsChange: _onSettingsChange 
     }).join('')}
   </div>
   <div class="info">
-    NBO Check Writer<br/>
+    Check Writer<br/>
     Ruler Calibration<br/>
     ${chequeWidth}mm × ${chequeHeight}mm<br/>
     Print at 100% scale — No page scaling
@@ -275,7 +275,7 @@ export function CalibrationPage({ settings, onSettingsChange: _onSettingsChange 
             <li>Print the calibration grid on plain paper</li>
             <li>Measure the grid with a ruler to verify 10mm spacing</li>
             <li>If spacing is off, adjust the Scale Factor in Print Settings</li>
-            <li>Place the print over a blank NBO cheque on a light table</li>
+            <li>Place the print over a blank cheque on a light table</li>
             <li>Note where fields (date, payee, amount) should appear</li>
             <li>Enter those coordinates in Layout Configuration</li>
             <li>Print a test cheque on plain paper and verify alignment</li>

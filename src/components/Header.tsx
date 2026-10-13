@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { FileText, Printer, Crosshair, Settings, WifiOff, Download } from 'lucide-react';
+import { FileText, Printer, Crosshair, Settings, WifiOff, Download, LogOut, User as UserIcon, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/context/AuthContext';
 
 export const NAV_TABS = [
   { value: 'write', label: 'Write Cheque', icon: FileText },
@@ -16,6 +17,7 @@ interface HeaderProps {
 }
 
 export function Header({ version, activeTab, onTabChange }: HeaderProps) {
+  const { user, signOut, sessionExpiryText, isOffline } = useAuth();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [installPrompt, setInstallPrompt] = useState<any>(null);
   const [isInstalled, setIsInstalled] = useState(false);
@@ -58,7 +60,7 @@ export function Header({ version, activeTab, onTabChange }: HeaderProps) {
   return (
     <header className="sticky top-0 z-50 border-b border-slate-200 bg-white shadow-sm">
       <div className="mx-auto max-w-7xl px-4 sm:px-6">
-        {/* Top row: identity + status */}
+        {/* Top row: identity + status + user controls */}
         <div className="flex h-14 items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-[#007267] to-[#004d40] shadow-md">
@@ -81,10 +83,10 @@ export function Header({ version, activeTab, onTabChange }: HeaderProps) {
             </div>
             <div>
               <h1 className="text-base font-bold leading-tight tracking-tight text-slate-900">
-                NBO Check Writer
+                Check Writer
               </h1>
               <p className="text-[11px] leading-tight text-slate-500">
-                National Bank of Oman
+                Cheque Printing System
               </p>
             </div>
           </div>
@@ -100,13 +102,38 @@ export function Header({ version, activeTab, onTabChange }: HeaderProps) {
                 Install PWA
               </button>
             )}
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
-              <WifiOff className="h-3 w-3" aria-hidden="true" />
-              {isInstalled ? 'PWA Active' : 'Offline Ready'}
+            <span
+              title={`Max session lifetime: 192 hours. ${sessionExpiryText}`}
+              className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700"
+            >
+              {isOffline ? <WifiOff className="h-3 w-3" aria-hidden="true" /> : <Clock className="h-3 w-3" aria-hidden="true" />}
+              {isOffline ? (isInstalled ? 'PWA Offline' : 'Offline') : sessionExpiryText}
             </span>
-            <span className="hidden rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600 sm:inline">
+            <span className="hidden rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600 lg:inline">
               v{version}
             </span>
+
+            {/* Authenticated user badge and sign-out */}
+            {user && (
+              <div className="ml-2 flex items-center gap-1.5 border-l border-slate-200 pl-3">
+                <span
+                  title={user.email || 'Authenticated User'}
+                  className="hidden md:inline-flex items-center gap-1.5 max-w-[180px] truncate text-xs font-medium text-slate-700 bg-slate-100 rounded-full px-2.5 py-1"
+                >
+                  <UserIcon className="h-3.5 w-3.5 text-[#007267] shrink-0" />
+                  <span className="truncate">{user.email}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={signOut}
+                  title="Sign Out"
+                  className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:border-red-300 hover:bg-red-50 hover:text-red-700 transition-colors cursor-pointer"
+                >
+                  <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span className="hidden sm:inline">Sign Out</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
 

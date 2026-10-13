@@ -23,9 +23,9 @@ export default defineConfig(({ mode }) => {
         registerType: 'autoUpdate',
         includeAssets: ['favicon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'icon.svg'],
         manifest: {
-          name: 'NBO Check Writer',
+          name: 'Check Writer',
           short_name: 'Check Writer',
-          description: 'Cheque printing and calibration tool for National Bank of Oman',
+          description: 'Cheque printing and calibration tool',
           theme_color: '#004D40',
           background_color: '#0a0a0b',
           display: 'standalone',

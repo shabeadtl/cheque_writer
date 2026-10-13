@@ -6,6 +6,8 @@ import { LayoutConfigurator } from '@/components/LayoutConfigurator';
 import { PrintSettings } from '@/components/PrintSettings';
 import { CalibrationPage } from '@/components/CalibrationPage';
 import { SettingsPage } from '@/components/SettingsPage';
+import { LoginPage } from '@/components/LoginPage';
+import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { useSettings } from '@/hooks/use-settings';
 import { generatePrintHTML, mmToMicrons } from '@/lib/cheque-layout';
 import { splitAmountWords } from '@/lib/amount-to-words';
@@ -15,7 +17,7 @@ import { CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react';
 
 const STATUS_TIMEOUT_MS = 5000;
 
-export default function App() {
+function AuthenticatedApp() {
   const [activeTab, setActiveTab] = useState('write');
   const [version, setVersion] = useState('1.0.0');
   const { settings, saveSettings } = useSettings();
@@ -273,11 +275,61 @@ export default function App() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <p className="text-center text-xs text-slate-500">
             {settings.isCalibrated
-              ? `NBO Check Writer v${version}`
-              : `NBO Check Writer v${version} — Layout fields use placeholder coordinates. Calibrate against a genuine NBO cheque before production printing.`}
+              ? `Check Writer v${version}`
+              : `Check Writer v${version} — Layout fields use placeholder coordinates. Calibrate against your physical blank cheque before production printing.`}
           </p>
         </div>
       </footer>
     </>
+  );
+}
+
+function AuthGatekeeper() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center p-4">
+        <div className="gradient-bg" aria-hidden="true" />
+        <div className="flex flex-col items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-[#007267] to-[#004d40] shadow-md animate-pulse">
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="white"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="2" y="5" width="20" height="14" rx="2" />
+              <line x1="6" y1="10" x2="14" y2="10" />
+              <line x1="6" y1="14" x2="10" y2="14" />
+              <circle cx="17" cy="13" r="2" />
+            </svg>
+          </div>
+          <div className="flex items-center gap-2 text-sm font-medium text-slate-600">
+            <Loader2 className="h-4 w-4 animate-spin text-[#007267]" />
+            Loading Check Writer&hellip;
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginPage />;
+  }
+
+  return <AuthenticatedApp />;
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AuthGatekeeper />
+    </AuthProvider>
   );
 }
