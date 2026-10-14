@@ -60,6 +60,7 @@ export interface ChequeData {
   date: string;
   amount: string;
   amountWords: string;
+  serialNumber?: string;
 }
 
 export interface ElectronAPI {

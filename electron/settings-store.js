@@ -1,109 +1,131 @@
 /**
- * Local settings persistence using electron-store.
+ * Local settings persistence using Electron userData directory and atomic JSON file storage.
  *
  * All settings are stored in a JSON file in the app's userData directory.
- * This runs in the main process only.
+ * This runs in the Electron main process only and eliminates ESM/CJS loader issues.
  */
-// electron-store v10 is ESM-only, so we use dynamic import
-let storeInstance = null;
+import electron from 'electron';
+import fs from 'node:fs';
+import path from 'node:path';
+
+const app = electron?.app || (electron && electron.default && electron.default.app);
+
 function getDefaultSettings() {
-    return {
-        // Printer settings
-        selectedPrinter: '',
-        scaleFactor: 100,
-        marginType: 'none',
-        customMargins: { top: 0, bottom: 0, left: 0, right: 0 },
-        // Cheque dimensions in mm — PLACEHOLDERS requiring calibration
-        chequeWidth: 200,
-        chequeHeight: 90,
-        // Field positions — PLACEHOLDERS requiring calibration against real NBO cheque
-        fields: {
-            date: {
-                x: 150,
-                y: 12,
-                fontSize: 11,
-                fontFamily: 'Arial',
-                alignment: 'left',
-                maxWidth: 40,
-                bold: false,
-            },
-            payee: {
-                x: 25,
-                y: 28,
-                fontSize: 11,
-                fontFamily: 'Arial',
-                alignment: 'left',
-                maxWidth: 140,
-                bold: false,
-            },
-            amountWords1: {
-                x: 10,
-                y: 40,
-                fontSize: 10,
-                fontFamily: 'Arial',
-                alignment: 'left',
-                maxWidth: 160,
-                bold: false,
-            },
-            amountWords2: {
-                x: 10,
-                y: 48,
-                fontSize: 10,
-                fontFamily: 'Arial',
-                alignment: 'left',
-                maxWidth: 160,
-                bold: false,
-            },
-            amountFigures: {
-                x: 165,
-                y: 28,
-                fontSize: 12,
-                fontFamily: 'Arial',
-                alignment: 'right',
-                maxWidth: 30,
-                bold: true,
-            },
-        },
-        // Calibration offsets in mm
-        offsetX: 0,
-        offsetY: 0,
-    };
+  return {
+    selectedPrinter: '',
+    scaleFactor: 100,
+    marginType: 'none',
+    customMargins: { top: 0, bottom: 0, left: 0, right: 0 },
+    chequeWidth: 200,
+    chequeHeight: 90,
+    fields: {
+      date: {
+        x: 150,
+        y: 12,
+        fontSize: 11,
+        fontFamily: 'Arial',
+        alignment: 'left',
+        maxWidth: 40,
+        bold: false,
+      },
+      payee: {
+        x: 25,
+        y: 28,
+        fontSize: 11,
+        fontFamily: 'Arial',
+        alignment: 'left',
+        maxWidth: 140,
+        bold: false,
+      },
+      amountWords1: {
+        x: 10,
+        y: 40,
+        fontSize: 10,
+        fontFamily: 'Arial',
+        alignment: 'left',
+        maxWidth: 160,
+        bold: false,
+      },
+      amountWords2: {
+        x: 10,
+        y: 48,
+        fontSize: 10,
+        fontFamily: 'Arial',
+        alignment: 'left',
+        maxWidth: 160,
+        bold: false,
+      },
+      amountFigures: {
+        x: 165,
+        y: 28,
+        fontSize: 12,
+        fontFamily: 'Arial',
+        alignment: 'right',
+        maxWidth: 30,
+        bold: true,
+      },
+    },
+    offsetX: 0,
+    offsetY: 0,
+    isCalibrated: false,
+  };
 }
-// Synchronous wrapper for settings access from IPC handlers
+
+let cachedSettings = null;
+
+function getStorePath() {
+  try {
+    if (app && typeof app.getPath === 'function') {
+      const userData = app.getPath('userData');
+      return path.join(userData, 'nbo-check-writer-settings.json');
+    }
+  } catch {
+    // fallback
+  }
+  return path.join(process.cwd(), 'nbo-check-writer-settings.json');
+}
+
 export const settingsStore = {
-    getAll: () => {
-        // For synchronous access, we use a simpler approach
-        try {
-            const Store = require('electron-store');
-            if (!storeInstance) {
-                storeInstance = new Store({
-                    name: 'nbo-check-writer-settings',
-                    defaults: getDefaultSettings(),
-                });
-            }
-            return storeInstance.store;
+  getAll: () => {
+    if (cachedSettings) {
+      return cachedSettings;
+    }
+    const storePath = getStorePath();
+    try {
+      if (fs.existsSync(storePath)) {
+        const raw = fs.readFileSync(storePath, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          cachedSettings = { ...getDefaultSettings(), ...parsed };
+          return cachedSettings;
         }
-        catch {
-            return getDefaultSettings();
-        }
-    },
-    setAll: (settings) => {
-        try {
-            const Store = require('electron-store');
-            if (!storeInstance) {
-                storeInstance = new Store({
-                    name: 'nbo-check-writer-settings',
-                    defaults: getDefaultSettings(),
-                });
-            }
-            // Merge settings
-            for (const [key, value] of Object.entries(settings)) {
-                storeInstance.set(key, value);
-            }
-        }
-        catch (err) {
-            console.error('Failed to save settings:', err);
-        }
-    },
-    getDefaults: getDefaultSettings,
+      }
+    } catch (err) {
+      console.error('Failed to load settings from storage:', err);
+    }
+    cachedSettings = getDefaultSettings();
+    return cachedSettings;
+  },
+
+  setAll: (settings) => {
+    const storePath = getStorePath();
+    try {
+      const current = settingsStore.getAll();
+      const updated = { ...current, ...settings };
+      cachedSettings = updated;
+
+      const dir = path.dirname(storePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+
+      const tempPath = `${storePath}.tmp.${Date.now()}`;
+      fs.writeFileSync(tempPath, JSON.stringify(updated, null, 2), 'utf-8');
+      fs.renameSync(tempPath, storePath);
+    } catch (err) {
+      console.error('Failed to save settings to storage:', err);
+    }
+  },
+
+  getDefaults: getDefaultSettings,
 };

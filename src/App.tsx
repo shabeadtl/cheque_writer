@@ -6,11 +6,15 @@ import { LayoutConfigurator } from '@/components/LayoutConfigurator';
 import { PrintSettings } from '@/components/PrintSettings';
 import { CalibrationPage } from '@/components/CalibrationPage';
 import { SettingsPage } from '@/components/SettingsPage';
+import { AuditLogPage } from '@/components/AuditLogPage';
+import { PrintConfirmationModal } from '@/components/PrintConfirmationModal';
 import { LoginPage } from '@/components/LoginPage';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { useSettings } from '@/hooks/use-settings';
 import { generatePrintHTML, mmToMicrons } from '@/lib/cheque-layout';
 import { splitAmountWords } from '@/lib/amount-to-words';
+import { recordAuditLog } from '@/lib/audit-log';
+import { savePayee } from '@/lib/payee-store';
 import { cn } from '@/lib/utils';
 import type { ChequeData } from '@/types/electron.d';
 import { CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react';
@@ -20,17 +24,23 @@ const STATUS_TIMEOUT_MS = 5000;
 function AuthenticatedApp() {
   const [activeTab, setActiveTab] = useState('write');
   const [version, setVersion] = useState('1.0.0');
+  const { user } = useAuth();
   const { settings, saveSettings } = useSettings();
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [lastPrintSuccessTrigger, setLastPrintSuccessTrigger] = useState(0);
+
   const [printStatus, setPrintStatus] = useState<{
     show: boolean;
     kind: 'idle' | 'pending' | 'success' | 'error';
     message: string;
   }>({ show: false, kind: 'idle', message: '' });
+
   const [chequeData, setChequeData] = useState<ChequeData>({
     payee: '',
     date: '',
     amount: '',
     amountWords: '',
+    serialNumber: '',
   });
 
   useEffect(() => {
@@ -54,6 +64,9 @@ function AuthenticatedApp() {
   const executePrint = useCallback(
     async (testMode: boolean) => {
       const [amountWords1, amountWords2] = splitAmountWords(chequeData.amountWords, 60);
+      const userEmail = user?.email || 'Authorized Staff';
+      const printerName = window.electronAPI ? settings.selectedPrinter || 'System Default' : 'Browser Print';
+      const platform = window.electronAPI ? 'electron' : 'web';
 
       const html = generatePrintHTML(
         {
@@ -96,6 +109,27 @@ function AuthenticatedApp() {
             }, 1500);
           }, 300);
 
+          // Record in Audit Log
+          void recordAuditLog({
+            userEmail,
+            action: testMode ? 'TEST_PRINT' : 'CHEQUE_PRINT',
+            serialNumber: chequeData.serialNumber || 'N/A',
+            payee: chequeData.payee,
+            amount: chequeData.amount,
+            amountWords: chequeData.amountWords,
+            chequeDate: chequeData.date,
+            printerName,
+            status: 'success',
+            platform,
+          });
+
+          if (!testMode) {
+            if (chequeData.payee.trim()) {
+              savePayee(chequeData.payee);
+            }
+            setLastPrintSuccessTrigger(Date.now());
+          }
+
           setPrintStatus({
             show: true,
             kind: 'success',
@@ -104,10 +138,25 @@ function AuthenticatedApp() {
               : 'Cheque print ready — browser print dialog opened.',
           });
         } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+          void recordAuditLog({
+            userEmail,
+            action: testMode ? 'TEST_PRINT' : 'CHEQUE_PRINT',
+            serialNumber: chequeData.serialNumber || 'N/A',
+            payee: chequeData.payee,
+            amount: chequeData.amount,
+            amountWords: chequeData.amountWords,
+            chequeDate: chequeData.date,
+            printerName,
+            status: 'failed',
+            errorMessage: errorMsg,
+            platform,
+          });
+
           setPrintStatus({
             show: true,
             kind: 'error',
-            message: `Print error: ${err instanceof Error ? err.message : 'Unknown error'}`,
+            message: `Print error: ${errorMsg}`,
           });
         }
         window.setTimeout(
@@ -129,8 +178,6 @@ function AuthenticatedApp() {
 
       setPrintStatus({ show: true, kind: 'pending', message: 'Sending to printer…' });
 
-
-
       try {
         const result = await window.electronAPI.printCheque({
           html,
@@ -145,26 +192,76 @@ function AuthenticatedApp() {
           scaleFactor: settings.scaleFactor,
         });
 
-        setPrintStatus(
-          result.success
-            ? {
-                show: true,
-                kind: 'success',
-                message: testMode
-                  ? 'Test print sent. Compare the output against a blank cheque and adjust layout if needed.'
-                  : 'Cheque sent to printer successfully.',
-              }
-            : {
-                show: true,
-                kind: 'error',
-                message: `Print failed: ${result.error ?? 'Unknown error'}`,
-              }
-        );
+        if (result.success) {
+          void recordAuditLog({
+            userEmail,
+            action: testMode ? 'TEST_PRINT' : 'CHEQUE_PRINT',
+            serialNumber: chequeData.serialNumber || 'N/A',
+            payee: chequeData.payee,
+            amount: chequeData.amount,
+            amountWords: chequeData.amountWords,
+            chequeDate: chequeData.date,
+            printerName,
+            status: 'success',
+            platform,
+          });
+
+          if (!testMode) {
+            if (chequeData.payee.trim()) {
+              savePayee(chequeData.payee);
+            }
+            setLastPrintSuccessTrigger(Date.now());
+          }
+
+          setPrintStatus({
+            show: true,
+            kind: 'success',
+            message: testMode
+              ? 'Test print sent. Compare the output against a blank cheque and adjust layout if needed.'
+              : 'Cheque sent to printer successfully.',
+          });
+        } else {
+          const errorMsg = result.error ?? 'Unknown printer error';
+          void recordAuditLog({
+            userEmail,
+            action: testMode ? 'TEST_PRINT' : 'CHEQUE_PRINT',
+            serialNumber: chequeData.serialNumber || 'N/A',
+            payee: chequeData.payee,
+            amount: chequeData.amount,
+            amountWords: chequeData.amountWords,
+            chequeDate: chequeData.date,
+            printerName,
+            status: 'failed',
+            errorMessage: errorMsg,
+            platform,
+          });
+
+          setPrintStatus({
+            show: true,
+            kind: 'error',
+            message: `Print failed: ${errorMsg}`,
+          });
+        }
       } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+        void recordAuditLog({
+          userEmail,
+          action: testMode ? 'TEST_PRINT' : 'CHEQUE_PRINT',
+          serialNumber: chequeData.serialNumber || 'N/A',
+          payee: chequeData.payee,
+          amount: chequeData.amount,
+          amountWords: chequeData.amountWords,
+          chequeDate: chequeData.date,
+          printerName,
+          status: 'failed',
+          errorMessage: errorMsg,
+          platform,
+        });
+
         setPrintStatus({
           show: true,
           kind: 'error',
-          message: `Print error: ${err instanceof Error ? err.message : 'Unknown error'}`,
+          message: `Print error: ${errorMsg}`,
         });
       }
 
@@ -174,11 +271,18 @@ function AuthenticatedApp() {
         printStatus.kind === 'error' ? 8000 : STATUS_TIMEOUT_MS
       );
     },
-    [chequeData, settings, printStatus.kind]
+    [chequeData, settings, printStatus.kind, user]
   );
 
-  const handlePrintRequest = useCallback(() => executePrint(false), [executePrint]);
-  const handleTestPrint = useCallback(() => executePrint(true), [executePrint]);
+  // Opening the Two-Step Confirmation Modal for physical cheques
+  const handlePrintRequest = useCallback(() => {
+    setIsConfirmModalOpen(true);
+  }, []);
+
+  // Test print directly onto plain paper
+  const handleTestPrint = useCallback(() => {
+    executePrint(true);
+  }, [executePrint]);
 
   return (
     <>
@@ -227,9 +331,11 @@ function AuthenticatedApp() {
                 {value === 'write' && (
                   <div className="grid items-start gap-6 md:grid-cols-[minmax(320px,2fr)_minmax(0,3fr)]">
                     <ChequeEntryForm
+                      settings={settings}
                       onDataChange={handleDataChange}
                       onPrintRequest={handlePrintRequest}
                       onTestPrint={handleTestPrint}
+                      lastPrintSuccessTrigger={lastPrintSuccessTrigger}
                     />
                     <div className="md:sticky md:top-36">
                       <ChequePreview
@@ -259,6 +365,12 @@ function AuthenticatedApp() {
                   </div>
                 )}
 
+                {value === 'audit' && (
+                  <div>
+                    <AuditLogPage />
+                  </div>
+                )}
+
                 {value === 'settings' && (
                   <div className="max-w-2xl">
                     <SettingsPage settings={settings} onSave={saveSettings} />
@@ -270,10 +382,21 @@ function AuthenticatedApp() {
         ))}
       </main>
 
+      {/* Two-Step Print Confirmation Safeguard Modal */}
+      <PrintConfirmationModal
+        isOpen={isConfirmModalOpen}
+        onClose={() => setIsConfirmModalOpen(false)}
+        onConfirmPrint={() => executePrint(false)}
+        onTestPrint={() => executePrint(true)}
+        chequeData={chequeData}
+        settings={settings}
+        isPrinting={printStatus.kind === 'pending'}
+      />
+
       {/* Footer */}
-      <footer className="mt-auto border-t border-slate-200 bg-white py-4">
+      <footer className="mt-auto border-t border-slate-200 bg-white/90 py-4 transition-colors dark:border-slate-800 dark:bg-slate-900/90">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <p className="text-center text-xs text-slate-500">
+          <p className="text-center text-xs text-slate-500 dark:text-slate-400">
             {settings.isCalibrated
               ? `Check Writer v${version}`
               : `Check Writer v${version} — Layout fields use placeholder coordinates. Calibrate against your physical blank cheque before production printing.`}
@@ -284,52 +407,35 @@ function AuthenticatedApp() {
   );
 }
 
-function AuthGatekeeper() {
-  const { user, loading } = useAuth();
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
+}
+
+function AppContent() {
+  const { session, loading } = useAuth();
 
   if (loading) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center p-4">
-        <div className="gradient-bg" aria-hidden="true" />
+      <div className="flex min-h-screen items-center justify-center bg-[#0a0a0b]">
         <div className="flex flex-col items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-[#007267] to-[#004d40] shadow-md animate-pulse">
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="white"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <rect x="2" y="5" width="20" height="14" rx="2" />
-              <line x1="6" y1="10" x2="14" y2="10" />
-              <line x1="6" y1="14" x2="10" y2="14" />
-              <circle cx="17" cy="13" r="2" />
-            </svg>
-          </div>
-          <div className="flex items-center gap-2 text-sm font-medium text-slate-600">
-            <Loader2 className="h-4 w-4 animate-spin text-[#007267]" />
-            Loading Check Writer&hellip;
-          </div>
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
+          <p className="text-xs text-zinc-400">Loading NBO Check Writer…</p>
         </div>
       </div>
     );
   }
 
-  if (!user) {
+  if (!session) {
     return <LoginPage />;
   }
 
-  return <AuthenticatedApp />;
-}
-
-export default function App() {
   return (
-    <AuthProvider>
-      <AuthGatekeeper />
-    </AuthProvider>
+    <div className="flex min-h-screen flex-col bg-slate-50 text-slate-900 transition-colors dark:bg-[#090e17] dark:text-slate-100">
+      <AuthenticatedApp />
+    </div>
   );
 }

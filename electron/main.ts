@@ -2,8 +2,8 @@ import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { settingsStore } from './settings-store';
-import { handlePrint, handleGetPrinters } from './print-service';
+import { settingsStore } from './settings-store.ts';
+import { handlePrint, handleGetPrinters } from './print-service.ts';
 
 // ESM-safe equivalent of __dirname (package.json has "type": "module")
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -33,7 +33,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false, // Required for electron-store in preload
+      sandbox: true, // Sandboxed renderer for maximum security
       webSecurity: true,
       allowRunningInsecureContent: false,
     },

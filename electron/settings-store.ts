@@ -1,15 +1,16 @@
-
-
 /**
- * Local settings persistence using electron-store.
+ * Local settings persistence using Electron userData directory and atomic JSON file storage.
  *
  * All settings are stored in a JSON file in the app's userData directory.
- * This runs in the main process only.
+ * This runs in the Electron main process only and eliminates ESM/CJS loader issues.
  */
 
+import electron from 'electron';
+import fs from 'node:fs';
+import path from 'node:path';
 
-// electron-store v10 is ESM-only, so we use dynamic import
-let storeInstance: any = null;
+// Handle both Electron runtime and test/Node environments
+const app = electron?.app || (electron as unknown as { default?: { app?: typeof electron.app } })?.default?.app;
 
 function getDefaultSettings() {
   return {
@@ -75,42 +76,64 @@ function getDefaultSettings() {
     // Calibration offsets in mm
     offsetX: 0,
     offsetY: 0,
+    isCalibrated: false,
   };
 }
 
-// Synchronous wrapper for settings access from IPC handlers
-export const settingsStore = {
-  getAll: () => {
-    // For synchronous access, we use a simpler approach
-    try {
-      const Store = require('electron-store');
-      if (!storeInstance) {
-        storeInstance = new Store({
-          name: 'nbo-check-writer-settings',
-          defaults: getDefaultSettings(),
-        });
-      }
-      return storeInstance.store;
-    } catch {
-      return getDefaultSettings();
+let cachedSettings: Record<string, unknown> | null = null;
+
+function getStorePath(): string {
+  try {
+    if (app && typeof app.getPath === 'function') {
+      const userData = app.getPath('userData');
+      return path.join(userData, 'nbo-check-writer-settings.json');
     }
+  } catch {
+    // fallback
+  }
+  return path.join(process.cwd(), 'nbo-check-writer-settings.json');
+}
+
+export const settingsStore = {
+  getAll: (): Record<string, unknown> => {
+    if (cachedSettings) {
+      return cachedSettings;
+    }
+    const storePath = getStorePath();
+    try {
+      if (fs.existsSync(storePath)) {
+        const raw = fs.readFileSync(storePath, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          cachedSettings = { ...getDefaultSettings(), ...parsed };
+          return cachedSettings;
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load settings from storage:', err);
+    }
+    cachedSettings = getDefaultSettings();
+    return cachedSettings;
   },
 
   setAll: (settings: Record<string, unknown>) => {
+    const storePath = getStorePath();
     try {
-      const Store = require('electron-store');
-      if (!storeInstance) {
-        storeInstance = new Store({
-          name: 'nbo-check-writer-settings',
-          defaults: getDefaultSettings(),
-        });
+      const current = settingsStore.getAll();
+      const updated = { ...current, ...settings };
+      cachedSettings = updated;
+
+      const dir = path.dirname(storePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
       }
-      // Merge settings
-      for (const [key, value] of Object.entries(settings)) {
-        storeInstance.set(key, value);
-      }
+
+      // Write atomically using temporary file to prevent corruption
+      const tempPath = `${storePath}.tmp.${Date.now()}`;
+      fs.writeFileSync(tempPath, JSON.stringify(updated, null, 2), 'utf-8');
+      fs.renameSync(tempPath, storePath);
     } catch (err) {
-      console.error('Failed to save settings:', err);
+      console.error('Failed to save settings to storage:', err);
     }
   },
 
